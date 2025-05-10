@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Générateur de QR Code</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        body { display: flex; min-height: 100vh; margin: 0; }
+        #sidebar {
+            width: 250px;
+            background-color: #f3f4f6;
+            padding: 1rem 0;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .sidebar-item {
+            position: relative;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            color: #4b5563;
+            transition: background-color 0.3s;
+            border-top-right-radius: 30px;
+            border-bottom-right-radius: 30px;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .sidebar-item:last-child {
+            margin-bottom: 0;
+        }
+        .sidebar-item:hover {
+            background-color: #e5e7eb;
+        }
+        .sidebar-item.active {
+            background-color: #d1d5db;
+            color: #1f2937;
+        }
+        .sidebar-item.active .tooltip {
+            display: block !important;
+        }
+        .sidebar-item i {
+            font-size: 1.5rem;
+            width: 30px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .tooltip {
+            display: none;
+            margin-left: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+        #content {
+            margin-left: 250px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        #form-container > div {
+            display: none;
+            width: 100%;
+            max-width: 900px;
+        }
+        #form-container > div:not(.hidden) {
+            display: flex;
+        }
+        #generate-section, #history-section, #scan-section {
+            flex-direction: row;
+            gap: 2rem;
+            align-items: flex-start;
+        }
+        #batch-section {
+            max-width: 500px;
+        }
+        #qr-form, #batch-input {
+            flex: 1;
+            max-width: 500px;
+        }
+        #history-list, #scan-result-container {
+            flex: 1;
+            max-width: 300px;
+        }
+        #result {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            max-width: 300px;
+        }
+        #result.visible {
+            display: flex;
+        }
+        #advanced-options {
+            display: none;
+        }
+        #advanced-options.visible {
+            display: block;
+        }
+        #download-feedback {
+            display: none;
+            color: #1f2937;
+            margin-top: 0.5rem;
+        }
+        #download-feedback.visible {
+            display: block;
+        }
+        @media (max-width: 767px) {
+            #sidebar {
+                width: 80px;
+            }
+            #content {
+                margin-left: 80px;
+            }
+            #generate-section, #history-section, #scan-section {
+                flex-direction: column;
+                align-items: center;
+            }
+            #result.visible {
+                position: static;
+                background: none;
+                transform: none;
+                animation: none;
+            }
+            #qr-form, #batch-input {
+                max-width: 100%;
+            }
+            #batch-input textarea {
+                width: 100%;
+            }
+            #history-list {
+                flex-direction: column;
+                max-width: 100%;
+                padding: 0 1rem;
+            }
+            #history-list > div {
+                flex-direction: row;
+                align-items: center;
+                padding: 0.5rem 0;
+            }
+            #history-list img {
+                width: 48px;
+                height: 48px;
+            }
+            #scan-section .flex {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+            #scan-section .flex button {
+                width: 100%;
+            }
+            #qr-video {
+                max-width: 100%;
+            }
+            #scan-result-container {
+                max-width: 100%;
+                padding: 0 1rem;
+            }
+            #back-button {
+                display: none !important;
+            }
+            #clear-result {
+                display: block;
+                margin-top: 1rem;
+            }
+        }
+        #clear-result {
+            display: none;
+            background-color: #d1d5db;
+            color: #1f2937;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            margin-top: 1rem;
+        }
+        #back-button { position: absolute; bottom: 2rem; width: 80%; max-width: 300px; }
+        footer {
+            width: 100%;
+            text-align: center;
+            padding: 0.5rem 0;
+            color: #4b5563;
+            white-space: nowrap;
+            font-size: 0.9rem;
+        }
+        #scan-result { min-height: 1.5em; display: block !important; visibility: visible !important; opacity: 1 !important; position: relative; z-index: 10; }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100">
+    <div id="sidebar">
+        <div>
+            <div id="generate-tab" class="sidebar-item active">
+                <i class="fas fa-qrcode"></i>
+                <span class="tooltip">Générer un QR Code</span>
+            </div>
+            <div id="batch-tab" class="sidebar-item">
+                <i class="fas fa-layer-group"></i>
+                <span class="tooltip">Générer par lot</span>
+            </div>
+            <div id="history-tab" class="sidebar-item">
+                <i class="fas fa-history"></i>
+                <span class="tooltip">Historique</span>
+            </div>
+            <div id="scan-tab" class="sidebar-item">
+                <i class="fas fa-camera"></i>
+                <span class="tooltip">Scanner</span>
+            </div>
+        </div>
+        <footer>
+            <p>© 2024-2025 devly92</p>
+        </footer>
+    </div>
+
+    <div id="content">
+        <div id="form-container" class="bg-white p-8 rounded-lg shadow-lg w-full">
+            <div id="generate-section">
+                <form id="qr-form" class="space-y-4">
+                    <h1 class="text-2xl font-bold mb-6 text-center">Générer un QR Code</h1>
+                    <div>
+                        <label for="data-type" class="block text-sm font-medium text-gray-700">Type de données</label>
+                        <select id="data-type" class="mt-1 block w-full p-2 border rounded-md">
+                            <option value="url" selected>URL</option>
+                            <option value="vcard">vCard</option>
+                            <option value="wifi">Wi-Fi</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    <div id="data-inputs">
+                        <div id="url-input" class="mt-4">
+                            <label for="data" class="block text-sm font-medium text-gray-700">URL</label>
+                            <input type="url" id="data" name="data" class="mt-1 block w-full p-2 border rounded-md" placeholder="https://example.com" required>
+                        </div>
+                        <div id="vcard-input" class="mt-4 hidden">
+                            <label for="vcard-name" class="block text-sm font-medium text-gray-700">Nom</label>
+                            <input type="text" id="vcard-name" name="vcard-name" class="mt-1 block w-full p-2 border rounded-md" placeholder="Jean Dupont">
+                            <label for="vcard-email" class="block text-sm font-medium text-gray-700 mt-2">Email</label>
+                            <input type="email" id="vcard-email" name="vcard-email" class="mt-1 block w-full p-2 border rounded-md" placeholder="jean.dupont@example.com">
+                            <label for="vcard-phone" class="block text-sm font-medium text-gray-700 mt-2">Téléphone</label>
+                            <input type="tel" id="vcard-phone" name="vcard-phone" class="mt-1 block w-full p-2 border rounded-md" placeholder="+33123456789">
+                        </div>
+                        <div id="wifi-input" class="mt-4 hidden">
+                            <label for="wifi-ssid" class="block text-sm font-medium text-gray-700">SSID</label>
+                            <input type="text" id="wifi-ssid" name="wifi-ssid" class="mt-1 block w-full p-2 border rounded-md" placeholder="MonWiFi">
+                            <label for="wifi-password" class="block text-sm font-medium text-gray-700 mt-2">Mot de passe</label>
+                            <input type="text" id="wifi-password" name="wifi-password" class="mt-1 block w-full p-2 border rounded-md" placeholder="motdepasse123">
+                        </div>
+                        <div id="sms-input" class="mt-4 hidden">
+                            <label for="sms-number" class="block text-sm font-medium text-gray-700">Numéro</label>
+                            <input type="tel" id="sms-number" name="sms-number" class="mt-1 block w-full p-2 border rounded-md" placeholder="+33123456789">
+                            <label for="sms-message" class="block text-sm font-medium text-gray-700 mt-2">Message</label>
+                            <input type="text" id="sms-message" name="sms-message" class="mt-1 block w-full p-2 border rounded-md" placeholder="Bonjour !">
+                        </div>
+                    </div>
+                    <button type="button" id="toggle-advanced" class="w-full bg-gray-300 text-gray-700 p-2 rounded-md hover:bg-gray-400">Options avancées</button>
+                    <div id="advanced-options">
+                        <div>
+                            <label for="error_correction" class="block text-sm font-medium text-gray-700">Correction d'erreur</label>
+                            <select id="error_correction" name="error_correction" class="mt-1 block w-full p-2 border rounded-md">
+                                <option value="L">L (7%)</option>
+                                <option value="M" selected>M (15%)</option>
+                                <option value="Q">Q (25%)</option>
+                                <option value="H">H (30%)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="version" class="block text-sm font-medium text-gray-700">Version (1-40, ou 0 pour auto)</label>
+                            <input type="number" id="version" name="version" class="mt-1 block w-full p-2 border rounded-md" min="0" max="40" value="0">
+                        </div>
+                        <div>
+                            <label for="box_size" class="block text-sm font-medium text-gray-700">Taille des modules (pixels)</label>
+                            <input type="number" id="box_size" name="box_size" class="mt-1 block w-full p-2 border rounded-md" min="1" value="10">
+                        </div>
+                        <div>
+                            <label for="border" class="block text-sm font-medium text-gray-700">Bordure (modules)</label>
+                            <input type="number" id="border" name="border" class="mt-1 block w-full p-2 border rounded-md" min="0" value="4">
+                        </div>
+                        <div>
+                            <label for="fill_color" class="block text-sm font-medium text-gray-700">Couleur de remplissage</label>
+                            <input type="color" id="fill_color" name="fill_color" class="mt-1 block w-full p-2 border rounded-md" value="#000000">
+                        </div>
+                        <div>
+                            <label for="back_color" class="block text-sm font-medium text-gray-700">Couleur de fond</label>
+                            <input type="color" id="back_color" name="back_color" class="mt-1 block w-full p-2 border rounded-md" value="#FFFFFF">
+                        </div>
+                        <div>
+                            <label for="format" class="block text-sm font-medium text-gray-700">Format de sortie</label>
+                            <select id="format" name="format" class="mt-1 block w-full p-2 border rounded-md">
+                                <option value="PNG" selected>PNG (Pillow)</option>
+                                <option value="PURE_PNG">PNG (Pur Python)</option>
+                                <option value="SVG">SVG</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="style" class="block text-sm font-medium text-gray-700">Style du QR Code</label>
+                            <select id="style" name="style" class="mt-1 block w-full p-2 border rounded-md">
+                                <option value="standard" selected>Standard</option>
+                                <option value="rounded">Coins arrondis</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">Générer QR Code</button>
+                </form>
+                <div id="result" class="flex flex-col items-center justify-center max-w-md">
+                    <img id="qr-image" class="max-w-full h-auto" alt="QR Code">
+                    <a id="download-link" class="mt-4 text-blue-600 underline">Télécharger le QR Code</a>
+                    <button type="button" id="ascii-button" class="w-full bg-green-600 text-white p-2 rounded-md hover:bg-green-700 mt-2" style="display: none;">Afficher en ASCII</button>
+                    <button type="button" id="matrix-button" class="w-full bg-purple-600 text-white p-2 rounded-md hover:bg-purple-700 mt-2" style="display: none;">Afficher la matrice</button>
+                    <pre id="ascii-output" class="mt-4 bg-gray-100 p-4 rounded-md" style="display: none;"></pre>
+                    <pre id="matrix-output" class="mt-4 bg-gray-100 p-4 rounded-md" style="display: none;"></pre>
+                    <button id="clear-result" class="bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700">Effacer le résultat</button>
+                    <button id="back-button" class="md:hidden bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700 hidden">Retour</button>
+                </div>
+            </div>
+            <div id="batch-section" class="hidden">
+                <div id="batch-input">
+                    <h1 class="text-2xl font-bold mb-6 text-center">Générer par lot</h1>
+                    <label for="batch-data" class="block text-sm font-medium text-gray-700">Liste d'URLs (une par ligne)</label>
+                    <textarea id="batch-data" name="batch-data" class="mt-1 block w-full p-2 border rounded-md" rows="5" placeholder="https://example.com\nhttps://example.org"></textarea>
+                    <button type="button" id="batch-button" class="w-full bg-orange-600 text-white p-2 rounded-md hover:bg-orange-700 mt-2">Générer par lot</button>
+                    <p id="download-feedback" class="text-center">Téléchargement en cours...</p>
+                </div>
+            </div>
+            <div id="history-section" class="hidden">
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-center">Historique des QR Codes</h2>
+                </div>
+                <div id="history-list" class="grid gap-4"></div>
+            </div>
+            <div id="scan-section" class="hidden">
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-center">Scanner un QR Code</h2>
+                    <div class="flex space-x-4 mb-6">
+                        <button id="scan-upload-tab" class="px-4 py-2 bg-blue-600 text-white rounded-md">Upload de fichier</button>
+                        <button id="scan-camera-tab" class="px-4 py-2 bg-gray-600 text-white rounded-md">Scan par caméra</button>
+                    </div>
+                    <div id="scan-upload-section">
+                        <input type="file" id="qr-upload" accept="image/*" class="mb-4">
+                    </div>
+                    <div id="scan-camera-section" class="hidden">
+                        <video id="qr-video" class="w-full max-w-md mb-4" style="display: none;"></video>
+                    </div>
+                    <canvas id="qr-canvas" class="hidden"></canvas>
+                </div>
+                <div id="scan-result-container">
+                    <p id="scan-result" class="mt-4 text-center"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const formContainer = document.getElementById('form-container');
+        const resultDiv = document.getElementById('result');
+        const qrImage = document.getElementById('qr-image');
+        const downloadLink = document.getElementById('download-link');
+        const backButton = document.getElementById('back-button');
+        const clearResultButton = document.getElementById('clear-result');
+        const qrForm = document.getElementById('qr-form');
+        const toggleAdvancedButton = document.getElementById('toggle-advanced');
+        const advancedOptions = document.getElementById('advanced-options');
+        const asciiButton = document.getElementById('ascii-button');
+        const matrixButton = document.getElementById('matrix-button');
+        const asciiOutput = document.getElementById('ascii-output');
+        const matrixOutput = document.getElementById('matrix-output');
+        const batchButton = document.getElementById('batch-button');
+        const batchData = document.getElementById('batch-data');
+        const downloadFeedback = document.getElementById('download-feedback');
+        const historyList = document.getElementById('history-list');
+        const generateTab = document.getElementById('generate-tab');
+        const batchTab = document.getElementById('batch-tab');
+        const historyTab = document.getElementById('history-tab');
+        const scanTab = document.getElementById('scan-tab');
+        const generateSection = document.getElementById('generate-section');
+        const batchSection = document.getElementById('batch-section');
+        const historySection = document.getElementById('history-section');
+        const scanSection = document.getElementById('scan-section');
+        const scanUploadTab = document.getElementById('scan-upload-tab');
+        const scanCameraTab = document.getElementById('scan-camera-tab');
+        const scanUploadSection = document.getElementById('scan-upload-section');
+        const scanCameraSection = document.getElementById('scan-camera-section');
+        const qrUpload = document.getElementById('qr-upload');
+        const qrVideo = document.getElementById('qr-video');
+        const qrCanvas = document.getElementById('qr-canvas');
+        const scanResult = document.getElementById('scan-result');
+        const dataTypeSelect = document.getElementById('data-type');
+        const urlInput = document.getElementById('url-input');
+        const vcardInput = document.getElementById('vcard-input');
+        const wifiInput = document.getElementById('wifi-input');
+        const smsInput = document.getElementById('sms-input');
+        const sidebar = document.getElementById('sidebar');
+
+        let scanCameraActive = false;
+
+        // Toggle des options avancées
+        toggleAdvancedButton.addEventListener('click', () => {
+            advancedOptions.classList.toggle('visible');
+            toggleAdvancedButton.textContent = advancedOptions.classList.contains('visible') ? 'Masquer les options avancées' : 'Options avancées';
+        });
+
+        // Effacer le résultat
+        clearResultButton.addEventListener('click', () => {
+            resultDiv.classList.remove('visible');
+            qrImage.src = '';
+            asciiOutput.style.display = 'none';
+            matrixOutput.style.display = 'none';
+        });
+
+        // Fonction pour gérer l'affichage des tooltips
+        function updateTooltips() {
+            const items = document.querySelectorAll('.sidebar-item');
+            items.forEach(item => {
+                const tooltip = item.querySelector('.tooltip');
+                if (item.classList.contains('active')) {
+                    tooltip.style.display = 'block';
+                } else {
+                    tooltip.style.display = 'none';
+                }
+            });
+        }
+
+        // Gestion du survol pour les éléments non actifs
+        sidebar.addEventListener('mouseenter', () => {
+            const nonActiveItems = document.querySelectorAll('.sidebar-item:not(.active) .tooltip');
+            nonActiveItems.forEach(tooltip => {
+                tooltip.style.display = 'block';
+            });
+        });
+
+        sidebar.addEventListener('mouseleave', () => {
+            const nonActiveItems = document.querySelectorAll('.sidebar-item:not(.active) .tooltip');
+            nonActiveItems.forEach(tooltip => {
+                tooltip.style.display = 'none';
+            });
+        });
+
+        async function generateQRCode(data) {
+            if (!data.data && data.dataType === 'url') {
+                alert("Le champ 'Données à encoder' ne peut pas être vide pour une URL.");
+                return;
+            }
+            let qrData = data.data;
+            if (data.dataType === 'vcard') {
+                if (!data['vcard-name'] && !data['vcard-email'] && !data['vcard-phone']) {
+                    alert("Veuillez remplir au moins un champ pour la vCard.");
+                    return;
+                }
+                qrData = `BEGIN:VCARD\nVERSION:3.0\nN:${data['vcard-name'] || ''}\nEMAIL:${data['vcard-email'] || ''}\nTEL:${data['vcard-phone'] || ''}\nEND:VCARD`;
+            } else if (data.dataType === 'wifi') {
+                if (!data['wifi-ssid']) {
+                    alert("Le SSID est requis pour le Wi-Fi.");
+                    return;
+                }
+                qrData = `WIFI:S:${data['wifi-ssid'] || ''};T:WPA;P:${data['wifi-password'] || ''};;`;
+            } else if (data.dataType === 'sms') {
+                if (!data['sms-number']) {
+                    alert("Le numéro est requis pour le SMS.");
+                    return;
+                }
+                qrData = `SMSTO:${data['sms-number'] || ''}:${data['sms-message'] || ''}`;
+            }
+            if (data.box_size < 1) {
+                alert("La taille des modules doit être d'au moins 1 pixel.");
+                return;
+            }
+            if (data.border < 0) {
+                alert("La bordure ne peut pas être négative.");
+                return;
+            }
+            if (!/^#[0-9A-Fa-f]{6}$/.test(data.fill_color) || !/^#[0-9A-Fa-f]{6}$/.test(data.back_color)) {
+                alert("Les couleurs doivent être au format hexadécimal (#RRGGBB).");
+                return;
+            }
+            try {
+                const response = await fetch('/generate-qr', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...data, data: qrData })
+                });
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                qrImage.src = url;
+                downloadLink.href = url;
+                downloadLink.download = `qrcode.${data.format === 'SVG' ? 'svg' : 'png'}`;
+                resultDiv.classList.add('visible');
+                asciiButton.style.display = 'block';
+                matrixButton.style.display = 'block';
+                saveToHistory({ ...data, data: qrData }, url);
+            } catch (error) {
+                console.error('Erreur fetch:', error);
+                alert(`Erreur: ${error.message}. Vérifiez que le serveur FastAPI est en cours d'exécution.`);
+            }
+        }
+
+        let debounceTimeout;
+        function debounce(func, wait) {
+            return function (...args) {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        qrForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const formData = new FormData(qrForm);
+            const data = Object.fromEntries(formData);
+            data.dataType = dataTypeSelect.value;
+            generateQRCode(data);
+        });
+
+        qrForm.addEventListener('input', debounce(() => {
+            const formData = new FormData(qrForm);
+            const data = Object.fromEntries(formData);
+            data.dataType = dataTypeSelect.value;
+            if (data.data || data['vcard-name'] || data['wifi-ssid'] || data['sms-number']) generateQRCode(data);
+        }, 500));
+
+        backButton.addEventListener('click', () => {
+            formContainer.classList.remove('hidden');
+            resultDiv.classList.remove('visible');
+            backButton.classList.add('hidden');
+            qrImage.src = '';
+            asciiOutput.style.display = 'none';
+            matrixOutput.style.display = 'none';
+        });
+
+        asciiButton.addEventListener('click', async () => {
+            const formData = new FormData(qrForm);
+            const data = Object.fromEntries(formData);
+            data.dataType = dataTypeSelect.value;
+            let qrData = data.data;
+            if (data.dataType === 'vcard') {
+                qrData = `BEGIN:VCARD\nVERSION:3.0\nN:${data['vcard-name'] || ''}\nEMAIL:${data['vcard-email'] || ''}\nTEL:${data['vcard-phone'] || ''}\nEND:VCARD`;
+            } else if (data.dataType === 'wifi') {
+                qrData = `WIFI:S:${data['wifi-ssid'] || ''};T:WPA;P:${data['wifi-password'] || ''};;`;
+            } else if (data.dataType === 'sms') {
+                qrData = `SMSTO:${data['sms-number'] || ''}:${data['sms-message'] || ''}`;
+            }
+            try {
+                const response = await fetch('/generate-qr-ascii', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...data, data: qrData })
+                });
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+                const result = await response.json();
+                asciiOutput.textContent = result.ascii;
+                asciiOutput.style.display = 'block';
+            } catch (error) {
+                alert(`Erreur: ${error.message}`);
+            }
+        });
+
+        matrixButton.addEventListener('click', async () => {
+            const formData = new FormData(qrForm);
+            const data = Object.fromEntries(formData);
+            data.dataType = dataTypeSelect.value;
+            let qrData = data.data;
+            if (data.dataType === 'vcard') {
+                qrData = `BEGIN:VCARD\nVERSION:3.0\nN:${data['vcard-name'] || ''}\nEMAIL:${data['vcard-email'] || ''}\nTEL:${data['vcard-phone'] || ''}\nEND:VCARD`;
+            } else if (data.dataType === 'wifi') {
+                qrData = `WIFI:S:${data['wifi-ssid'] || ''};T:WPA;P:${data['wifi-password'] || ''};;`;
+            } else if (data.dataType === 'sms') {
+                qrData = `SMSTO:${data['sms-number'] || ''}:${data['sms-message'] || ''}`;
+            }
+            try {
+                const response = await fetch('/generate-qr-matrix', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...data, data: qrData })
+                });
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+                const result = await response.json();
+                matrixOutput.textContent = JSON.stringify(result.matrix, null, 2);
+                matrixOutput.style.display = 'block';
+            } catch (error) {
+                alert(`Erreur: ${error.message}`);
+            }
+        });
+
+        batchButton.addEventListener('click', async () => {
+            const lines = batchData.value.split('\n').filter(line => line.trim());
+            if (!lines.length) {
+                alert("Veuillez entrer au moins une URL.");
+                return;
+            }
+            downloadFeedback.classList.add('visible');
+            const formData = new FormData(qrForm);
+            const baseData = Object.fromEntries(formData);
+            const batchRequest = {
+                items: lines.map(data => ({ ...baseData, data }))
+            };
+            try {
+                const response = await fetch('/generate-qr-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(batchRequest)
+                });
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'qrcodes.zip';
+                a.click();
+                setTimeout(() => {
+                    downloadFeedback.classList.remove('visible');
+                }, 2000);
+            } catch (error) {
+                alert(`Erreur: ${error.message}`);
+                downloadFeedback.classList.remove('visible');
+            }
+        });
+
+        generateTab.addEventListener('click', () => {
+            generateSection.classList.remove('hidden');
+            batchSection.classList.add('hidden');
+            historySection.classList.add('hidden');
+            scanSection.classList.add('hidden');
+            generateTab.classList.add('active');
+            batchTab.classList.remove('active');
+            historyTab.classList.remove('active');
+            scanTab.classList.remove('active');
+            scanResult.textContent = '';
+            console.log('Élément actif après clic sur generateTab:', document.querySelector('.sidebar-item.active').id);
+            updateTooltips();
+            stopCamera();
+        });
+
+        batchTab.addEventListener('click', () => {
+            batchSection.classList.remove('hidden');
+            generateSection.classList.add('hidden');
+            historySection.classList.add('hidden');
+            scanSection.classList.add('hidden');
+            batchTab.classList.add('active');
+            generateTab.classList.remove('active');
+            historyTab.classList.remove('active');
+            scanTab.classList.remove('active');
+            resultDiv.classList.remove('visible');
+            qrImage.src = '';
+            asciiOutput.style.display = 'none';
+            matrixOutput.style.display = 'none';
+            scanResult.textContent = '';
+            console.log('Élément actif après clic sur batchTab:', document.querySelector('.sidebar-item.active').id);
+            updateTooltips();
+            stopCamera();
+        });
+
+        historyTab.addEventListener('click', () => {
+            historySection.classList.remove('hidden');
+            generateSection.classList.add('hidden');
+            batchSection.classList.add('hidden');
+            scanSection.classList.add('hidden');
+            historyTab.classList.add('active');
+            generateTab.classList.remove('active');
+            batchTab.classList.remove('active');
+            scanTab.classList.remove('active');
+            resultDiv.classList.remove('visible');
+            qrImage.src = '';
+            asciiOutput.style.display = 'none';
+            matrixOutput.style.display = 'none';
+            scanResult.textContent = '';
+            console.log('Élément actif après clic sur historyTab:', document.querySelector('.sidebar-item.active').id);
+            updateTooltips();
+            stopCamera();
+        });
+
+        scanTab.addEventListener('click', () => {
+            scanSection.classList.remove('hidden');
+            generateSection.classList.add('hidden');
+            batchSection.classList.add('hidden');
+            historySection.classList.add('hidden');
+            scanTab.classList.add('active');
+            generateTab.classList.remove('active');
+            batchTab.classList.remove('active');
+            historyTab.classList.remove('active');
+            resultDiv.classList.remove('visible');
+            qrImage.src = '';
+            asciiOutput.style.display = 'none';
+            matrixOutput.style.display = 'none';
+            scanResult.textContent = '';
+            console.log('Élément actif après clic sur scanTab:', document.querySelector('.sidebar-item.active').id);
+            updateTooltips();
+            scanUploadTab.click();
+        });
+
+        scanUploadTab.addEventListener('click', () => {
+            scanUploadSection.classList.remove('hidden');
+            scanCameraSection.classList.add('hidden');
+            scanUploadTab.classList.add('bg-blue-600');
+            scanUploadTab.classList.remove('bg-gray-600');
+            scanCameraTab.classList.add('bg-gray-600');
+            scanCameraTab.classList.remove('bg-blue-600');
+            stopCamera();
+            scanResult.textContent = '';
+        });
+
+        scanCameraTab.addEventListener('click', () => {
+            scanCameraSection.classList.remove('hidden');
+            scanUploadSection.classList.add('hidden');
+            scanCameraTab.classList.add('bg-blue-600');
+            scanCameraTab.classList.remove('bg-gray-600');
+            scanUploadTab.classList.add('bg-gray-600');
+            scanUploadTab.classList.remove('bg-blue-600');
+            scanResult.textContent = '';
+            startCamera();
+        });
+
+        qrUpload.addEventListener('change', (event) => {
+            console.log('Upload déclenché');
+            const file = event.target.files[0];
+            if (!file) {
+                console.log('Aucun fichier sélectionné');
+                scanResult.textContent = 'Aucun fichier sélectionné.';
+                return;
+            }
+            scanResult.textContent = 'Chargement de l\'image...';
+            console.log('Avant chargement, scan-result:', scanResult.textContent);
+            const img = new Image();
+            img.onload = () => {
+                console.log('Image chargée, dimensions:', img.width, img.height);
+                try {
+                    const ctx = qrCanvas.getContext('2d');
+                    qrCanvas.width = img.width;
+                    qrCanvas.height = img.height;
+                    ctx.drawImage(img, 0, 0, img.width, img.height);
+                    let imageData = ctx.getImageData(0, 0, img.width, img.height);
+                    console.log('Données de l\'image extraites:', imageData.width, imageData.height);
+
+                    const data = imageData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+                        const gray = 0.2989 * r + 0.5870 * g + 0.1140 * b;
+                        const contrasted = gray < 128 ? 0 : 255;
+                        data[i] = contrasted;
+                        data[i + 1] = contrasted;
+                        data[i + 2] = contrasted;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    imageData = ctx.getImageData(0, 0, img.width, img.height);
+                    console.log('Image pré-traitée (niveaux de gris + contraste)');
+
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    console.log('Résultat jsQR:', code);
+                    const resultText = code ? code.data : 'Aucun QR Code détecté dans l\'image.';
+                    console.log('Texte à afficher:', resultText);
+
+                    scanResult.textContent = resultText;
+                    scanResult.style.display = 'block';
+                    scanResult.style.visibility = 'visible';
+                    scanResult.style.opacity = '1';
+                    console.log('Styles appliqués à scan-result:', {
+                        display: window.getComputedStyle(scanResult).display,
+                        visibility: window.getComputedStyle(scanResult).visibility,
+                        opacity: window.getComputedStyle(scanResult).opacity,
+                        zIndex: window.getComputedStyle(scanResult).zIndex
+                    });
+                    requestAnimationFrame(() => {
+                        console.log('Après mise à jour (requestAnimationFrame), scan-result:', scanResult.textContent);
+                        setTimeout(() => {
+                            console.log('Après mise à jour (setTimeout), scan-result:', scanResult.textContent);
+                        }, 100);
+                    });
+                } catch (error) {
+                    console.error('Erreur lors du traitement de l\'image:', error);
+                    scanResult.textContent = `Erreur lors du traitement de l'image : ${error.message}`;
+                    scanResult.style.display = 'block';
+                    requestAnimationFrame(() => {
+                        console.log('Après erreur, scan-result:', scanResult.textContent);
+                    });
+                }
+            };
+            img.onerror = () => {
+                console.error('Erreur de chargement de l\'image');
+                scanResult.textContent = 'Erreur : Impossible de charger l\'image. Vérifiez le format.';
+                scanResult.style.display = 'block';
+                requestAnimationFrame(() => {
+                    console.log('Après erreur de chargement, scan-result:', scanResult.textContent);
+                });
+            };
+            img.src = URL.createObjectURL(file);
+        });
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                qrVideo.srcObject = stream;
+                qrVideo.style.display = 'block';
+                qrVideo.onloadedmetadata = () => {
+                    qrVideo.play();
+                    scanCameraActive = true;
+                    scanQRFromCamera();
+                };
+            } catch (error) {
+                scanResult.textContent = `Erreur d'accès à la caméra : ${error.message}. Essayez d'uploader une image à la place.`;
+            }
+        }
+
+        function stopCamera() {
+            scanCameraActive = false;
+            if (qrVideo.srcObject) {
+                qrVideo.srcObject.getTracks().forEach(track => track.stop());
+                qrVideo.style.display = 'none';
+            }
+            scanResult.textContent = '';
+        }
+
+        function scanQRFromCamera() {
+            if (!scanCameraActive) return;
+            if (qrVideo.videoWidth === 0 || qrVideo.videoHeight === 0) {
+                requestAnimationFrame(scanQRFromCamera);
+                return;
+            }
+            try {
+                const ctx = qrCanvas.getContext('2d');
+                qrCanvas.width = qrVideo.videoWidth;
+                qrCanvas.height = qrVideo.videoHeight;
+                ctx.drawImage(qrVideo, 0, 0);
+                const imageData = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                if (code) {
+                    scanResult.textContent = code.data;
+                } else {
+                    scanResult.textContent = "Aucun QR Code détecté. Pointez la caméra sur un QR Code.";
+                    requestAnimationFrame(scanQRFromCamera);
+                }
+            } catch (error) {
+                scanResult.textContent = `Erreur de scan : ${error.message}`;
+                requestAnimationFrame(scanQRFromCamera);
+            }
+        }
+
+        dataTypeSelect.addEventListener('change', () => {
+            urlInput.classList.add('hidden');
+            vcardInput.classList.add('hidden');
+            wifiInput.classList.add('hidden');
+            smsInput.classList.add('hidden');
+            if (dataTypeSelect.value === 'url') urlInput.classList.remove('hidden');
+            if (dataTypeSelect.value === 'vcard') vcardInput.classList.remove('hidden');
+            if (dataTypeSelect.value === 'wifi') wifiInput.classList.remove('hidden');
+            if (dataTypeSelect.value === 'sms') smsInput.classList.remove('hidden');
+        });
+
+        function saveToHistory(data, url) {
+            const history = JSON.parse(localStorage.getItem('qrHistory') || '[]');
+            history.unshift({ data, url, timestamp: new Date().toISOString() });
+            if (history.length > 10) history.pop();
+            localStorage.setItem('qrHistory', JSON.stringify(history));
+            updateHistory();
+        }
+
+        function updateHistory() {
+            const history = JSON.parse(localStorage.getItem('qrHistory') || '[]');
+            historyList.innerHTML = '';
+            history.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-4 p-2 bg-gray-100 rounded-md';
+                div.innerHTML = `
+                    <img src="${item.url}" class="w-16 h-16">
+                    <p>${item.data.data.slice(0, 50)}${item.data.data.length > 50 ? '...' : ''}</p>
+                    <a href="${item.url}" download="qrcode-${index}.${item.data.format === 'SVG' ? 'svg' : 'png'}" class="text-blue-600 underline">Télécharger</a>
+                `;
+                historyList.appendChild(div);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateHistory();
+            updateTooltips();
+        });
+    </script>
+</body>
+</html>
